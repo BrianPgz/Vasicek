@@ -1,0 +1,63 @@
+import numpy as np
+import pandas as pd
+from scipy.optimize import minimize
+import matplotlib.pyplot as plt
+
+# Función para estimar parámetros del modelo Vasicek
+def vasicek_likelihood(params, rates):
+    a, b, sigma = params
+    dt = 1 / 252  # Asumiendo días hábiles
+    likelihood = 0
+    
+    for i in range(1, len(rates)):
+        r_t = rates[i-1]
+        r_t1 = rates[i]
+        drift = a * (b - r_t) * dt
+        volatility = sigma * np.sqrt(dt)
+        expected_rate = r_t + drift
+        variance = volatility**2
+        likelihood += -0.5 * np.log(2 * np.pi * variance) - ((r_t1 - expected_rate)**2 / (2 * variance))
+        
+    return -likelihood
+
+# Ejemplo de datos históricos (asegúrate de reemplazar con tus datos)
+# rates = pd.Series([...])  # Inserta aquí los datos históricos de tasas para un nodo de la curva (ej. 1 día)
+
+# Parámetros iniciales
+initial_params = [0.1, 0.05, 0.01]  # a, b, sigma
+
+# Estimación de parámetros
+result = minimize(vasicek_likelihood, initial_params, args=(rates,), method='L-BFGS-B', bounds=((0, None), (0, None), (0, None)))
+a_est, b_est, sigma_est = result.x
+print(f"Parámetros estimados: a={a_est}, b={b_est}, sigma={sigma_est}")
+
+# Simulación de tasas hasta 2026
+np.random.seed(42)
+n_simulations = 1000
+n_steps = 252 * (2026 - 2024)  # Asumiendo simulaciones diarias hasta 2026
+dt = 1 / 252
+r_t = rates.iloc[-1]  # Última tasa observada
+simulations = np.zeros((n_simulations, n_steps))
+
+for i in range(n_simulations):
+    r = r_t
+    for t in range(n_steps):
+        drift = a_est * (b_est - r) * dt
+        diffusion = sigma_est * np.sqrt(dt) * np.random.normal()
+        r += drift + diffusion
+        simulations[i, t] = r
+
+# Proyecciones mensuales
+forecast_dates = pd.date_range(start='2024-01-01', periods=n_steps, freq='B')
+mean_projection = np.mean(simulations, axis=0)
+mean_projection_monthly = pd.Series(mean_projection, index=forecast_dates).resample('M').last()
+
+# Gráfica de la proyección
+plt.figure(figsize=(14, 7))
+plt.plot(mean_projection_monthly, label='Proyección Media')
+plt.title('Proyección de la Curva de TIIE')
+plt.xlabel('Fecha')
+plt.ylabel('Tasa de Interés')
+plt.legend()
+plt.grid(True)
+plt.show()
